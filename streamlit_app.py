@@ -124,7 +124,7 @@ with st.form("form_trecho"):
     Q = st.number_input("Vazão [m³/s]", value=0.01, format="%.5f")
     eps = st.number_input("Rugosidade absoluta [m]", value=1e-4, format="%.1e")
     method = st.selectbox("Método de atrito", ["Swamee-Jain", "Colebrook"])
-    st.image("https://github.com/guiaguima/PERDAS_CARGA_GUIMA/blob/main/PERDAS_LOCALIZADAS.png")
+    st.image("https://github.com/guiaguima/PERDAS_CARGA_GUIMA/blob/main/PERDAS_LOCALIZADAS.png?raw=true")
     K_total = st.number_input("Somatório de coeficientes K (perdas locais)", value=0.0)
 
     submitted = st.form_submit_button("➕ Adicionar trecho")
