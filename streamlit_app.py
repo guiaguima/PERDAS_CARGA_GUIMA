@@ -118,7 +118,7 @@ if st.button("🗑️ Limpar todos os trechos"):
 with st.form("form_trecho"):
     st.subheader("Adicionar novo trecho")
     rho = st.number_input("Densidade [kg/m³]", value=1000.0)
-    mu = st.number_input("Viscosidade dinâmica [Pa.s]", value=0.001)
+    mu = st.number_input("Viscosidade dinâmica [Pa.s]", value=0.001002)
     D = st.number_input("Diâmetro interno [m]", value=0.1, format="%.4f")
     L = st.number_input("Comprimento [m]", value=10.0)
     Q = st.number_input("Vazão [m³/s]", value=0.01, format="%.5f")
