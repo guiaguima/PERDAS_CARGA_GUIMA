@@ -1,7 +1,6 @@
 import streamlit as st
 import numpy as np
 import io
-import reportlab
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
