@@ -122,6 +122,7 @@ with st.form("form_trecho"):
     D = st.number_input("Diâmetro interno [m]", value=0.1, format="%.4f")
     L = st.number_input("Comprimento [m]", value=10.0)
     Q = st.number_input("Vazão [m³/s]", value=0.01, format="%.5f")
+    st.image("https://github.com/guiaguima/PERDAS_CARGA_GUIMA/blob/main/RUGOSIDADE.png?raw=true")
     eps = st.number_input("Rugosidade absoluta [m]", value=1e-4, format="%.1e")
     method = st.selectbox("Método de atrito", ["Swamee-Jain", "Colebrook"])
     st.image("https://github.com/guiaguima/PERDAS_CARGA_GUIMA/blob/main/PERDAS_LOCALIZADAS.png?raw=true")
