@@ -171,7 +171,7 @@ with col_input:
         if k_method == "Cálculo por Acessórios":
             
             total_k_calc = 0.0
-            st.markdown("Selecione os acessórios incluídos neste segmento:")
+            st.markdown("Selecione os acessórios incluídos neste segmento (unidades):")
             
             # Divide os acessórios em duas colunas para melhor visualização
             fitting_names = list(FITTING_K_FACTORS.keys())
@@ -195,13 +195,13 @@ with col_input:
                 target_col = col_k1 if i < mid_point else col_k2
                 
                 with target_col:
+                    # FIX: Removido label_visibility="collapsed" para que o nome apareça
                     qty = st.number_input(
                         f"{name} (K={k_value})", 
                         min_value=0, 
                         value=st.session_state[key_qty], 
                         step=1, 
-                        key=key_qty,
-                        label_visibility="collapsed"
+                        key=key_qty
                     )
                 
                 # Calcula a contribuição
@@ -220,8 +220,13 @@ with col_input:
             accessories_used = {}
             if k_method == "Cálculo por Acessórios":
                 for name in fitting_names:
-                    key_qty = f"qty_{segment_id_for_state}_{name}"
-                    qty = st.session_state[key_qty]
+                    # O ID do estado é sempre baseado no tamanho atual da lista ANTES de adicionar
+                    key_qty = f"qty_{len(st.session_state.system_segments)}_{name}" 
+                    
+                    # Usa uma chave temporária para obter o valor atual do input
+                    current_key = f"qty_{segment_id_for_state}_{name}"
+                    qty = st.session_state.get(current_key, 0)
+                    
                     if qty > 0:
                         accessories_used[name] = qty
 
@@ -237,7 +242,8 @@ with col_input:
             
             # Limpa o estado dos inputs de acessórios após adicionar (para o próximo segmento)
             for name in fitting_names:
-                st.session_state[f"qty_{segment_id_for_state}_{name}"] = 0
+                # Limpa a chave que foi usada no input ANTES da adição
+                del st.session_state[f"qty_{segment_id_for_state}_{name}"]
                 
             st.rerun()
 
