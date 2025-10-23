@@ -5,10 +5,27 @@ import plotly.express as px
 import plotly.graph_objects as go
 import math
 import io # Para manipulação de dados para download
+from scipy.optimize import fsolve # Importar fsolve aqui para evitar erro de escopo
 
 # --- Constantes e Conversões ---
 g = 9.81  # Aceleração da gravidade (m/s²)
 NU_WATER = 1.004e-6 # Viscosidade cinemática da água a 20°C (m²/s)
+
+# Fatores K de Perda Menor para Acessórios Comuns (Valores Típicos)
+FITTING_K_FACTORS = {
+    "Cotovelo 90° (Raio Curto)": 0.9,
+    "Cotovelo 90° (Raio Longo)": 0.4,
+    "Cotovelo 45°": 0.2,
+    "Válvula de Gaveta (Totalmente Aberta)": 0.15,
+    "Válvula Globo (Totalmente Aberta)": 10.0,
+    "Válvula de Retenção (Tipo Porta)": 2.0,
+    "Válvula de Retenção (Tipo Disco)": 4.0,
+    "Entrada de Tubo (Borda Viva)": 0.5,
+    "Entrada de Tubo (Arredondada)": 0.1,
+    "Saída de Tubo (Perda de Saída)": 1.0,
+    "Tê (Linha Principal)": 0.4,
+    "Tê (Ramificação 90°)": 1.5,
+}
 
 # --- Funções de Cálculo de Curva do Sistema (Colebrook/Swamee-Jain) ---
 
@@ -21,9 +38,8 @@ def swamee_jain_f(Re, e_D):
         # Fluxo Laminar (Equação de Poiseuille)
         return 64 / Re
     elif Re < 4000:
-        # Fluxo de Transição (Pode ser instável, mas retornamos um valor interpolado simples)
-        # Manter a lógica de interpolação se necessário, mas geralmente não é crítica
-        return (64 / 2000) + (Re - 2000) / 2000 * (4 * swamee_jain_f(4000, e_D) - 64 / 2000)
+        # Fluxo de Transição: Simplificação ou interpolação (manter a simplicidade)
+        return 0.035 # Valor conservador para transição
     else:
         # Fluxo Turbulento (Swamee-Jain)
         term1 = e_D / 3.7
@@ -36,10 +52,6 @@ def swamee_jain_f(Re, e_D):
 def calculate_head_loss(Q_m3h, segments, nu_kinematic):
     """
     Calcula a perda de carga total (hf) para um dado Q (vazão) e segmentos de tubulação.
-    Q_m3h: Vazão em m³/h
-    segments: Lista de dicionários com L, D, e, K_minor (metros)
-    nu_kinematic: Viscosidade cinemática (m²/s)
-    Retorna a perda de carga total em metros (m).
     """
     if not segments:
         return 0.0
@@ -135,36 +147,110 @@ with col_input:
     # --- INPUT DE SEGMENTOS DE PERDA DE CARGA ---
     st.header("2. Segmentos de Perda de Carga")
     with st.expander("Adicionar Segmento (Colebrook/Swamee-Jain)", expanded=True):
+        
+        # --- INPUTS GEOMÉTRICOS ---
         col_L, col_D = st.columns(2)
         with col_L:
             L_in = st.number_input("Comprimento (L, m):", value=50.0, min_value=0.1, step=5.0)
         with col_D:
             D_in = st.number_input("Diâmetro (D, m):", value=0.15, min_value=0.01, format="%.3f")
 
-        col_e, col_K = st.columns(2)
-        with col_e:
-            e_in = st.number_input("Rugosidade (ε, m) - Aço: 0.000045", value=0.000045, min_value=1e-7, format="%.7e")
-        with col_K:
-            K_in = st.number_input("Coef. de Perda Menor (K minor):", value=2.0, min_value=0.0, step=0.1)
+        e_in = st.number_input("Rugosidade (ε, m) - Aço: 0.000045", value=0.000045, min_value=1e-7, format="%.7e")
+        
+        st.subheader("Perdas Menores (K minor)")
+        
+        # --- NOVO: Cálculo de Perdas Menores ---
+        k_method = st.radio(
+            "Método de Cálculo K minor:",
+            ("Cálculo por Acessórios", "Valor Manual Direto"),
+            key='k_method'
+        )
+        
+        K_in = 0.0 # Inicializa
+        
+        if k_method == "Cálculo por Acessórios":
+            
+            total_k_calc = 0.0
+            st.markdown("Selecione os acessórios incluídos neste segmento:")
+            
+            # Divide os acessórios em duas colunas para melhor visualização
+            fitting_names = list(FITTING_K_FACTORS.keys())
+            mid_point = len(fitting_names) // 2
+            col_k1, col_k2 = st.columns(2)
+            
+            # Usa um ID único para o state dos inputs de quantidade
+            segment_id_for_state = len(st.session_state.system_segments)
+            
+            for i, name in enumerate(fitting_names):
+                k_value = FITTING_K_FACTORS[name]
+                
+                # Define a chave única para cada input de quantidade
+                key_qty = f"qty_{segment_id_for_state}_{name}"
+                
+                # Certifica-se de que o estado existe
+                if key_qty not in st.session_state:
+                    st.session_state[key_qty] = 0
 
-        if st.button("Adicionar Segmento"):
+                # Renderiza nas colunas
+                target_col = col_k1 if i < mid_point else col_k2
+                
+                with target_col:
+                    qty = st.number_input(
+                        f"{name} (K={k_value})", 
+                        min_value=0, 
+                        value=st.session_state[key_qty], 
+                        step=1, 
+                        key=key_qty,
+                        label_visibility="collapsed"
+                    )
+                
+                # Calcula a contribuição
+                total_k_calc += qty * k_value
+            
+            K_in = total_k_calc
+            st.success(f"K minor Total Calculado: **{K_in:.2f}**")
+            
+        else: # Valor Manual Direto
+             K_in = st.number_input("Coef. de Perda Menor (K minor):", value=2.0, min_value=0.0, step=0.1)
+
+
+        # --- BOTÃO DE ADICIONAR ---
+        if st.button("Adicionar Segmento", key="add_segment_button"):
+            # Acessórios usados para fins de relatório (se aplicável)
+            accessories_used = {}
+            if k_method == "Cálculo por Acessórios":
+                for name in fitting_names:
+                    key_qty = f"qty_{segment_id_for_state}_{name}"
+                    qty = st.session_state[key_qty]
+                    if qty > 0:
+                        accessories_used[name] = qty
+
             st.session_state.system_segments.append({
                 'L': L_in,
                 'D': D_in,
                 'e': e_in,
                 'K_minor': K_in,
-                'id': len(st.session_state.system_segments) + 1 # ID simples para rastreamento
+                'Acessórios': accessories_used, # Adiciona detalhes para o relatório
+                'id': len(st.session_state.system_segments) + 1 
             })
-            st.success(f"Segmento {len(st.session_state.system_segments)} adicionado!")
+            st.success(f"Segmento {len(st.session_state.system_segments)} adicionado com K minor = {K_in:.2f}!")
+            
+            # Limpa o estado dos inputs de acessórios após adicionar (para o próximo segmento)
+            for name in fitting_names:
+                st.session_state[f"qty_{segment_id_for_state}_{name}"] = 0
+                
+            st.rerun()
 
     # --- Visualização e Remoção de Segmentos ---
     st.subheader("Segmentos Atuais:")
     if st.session_state.system_segments:
         df_segments = pd.DataFrame(st.session_state.system_segments)
         df_segments_display = df_segments.rename(columns={
-            'L': 'L (m)', 'D': 'D (m)', 'e': 'ε (m)', 'K_minor': 'K Menor', 'id': 'ID'
+            'L': 'L (m)', 'D': 'D (m)', 'e': 'ε (m)', 'K_minor': 'K Menor', 'id': 'ID', 'Acessórios': 'Detalhes K'
         })
-        st.dataframe(df_segments_display.set_index('ID'), use_container_width=True)
+        # Remove a coluna 'Acessórios' para o display principal, ou formata de forma concisa
+        df_display_clean = df_segments_display.drop(columns=['Detalhes K']).set_index('ID')
+        st.dataframe(df_display_clean, use_container_width=True)
 
         if st.button("Remover Todos os Segmentos"):
             st.session_state.system_segments = []
@@ -241,9 +327,6 @@ with col_plot:
         except np.linalg.LinAlgError:
             st.error("Erro no ajuste: Verifique se os pontos da bomba são válidos e não colineares.")
             
-    else:
-        st.warning("Adicione pelo menos 3 pontos da bomba para gerar a Curva da Bomba (Ajuste Quadrático).")
-        
     # --- PONTO DE INTERSEÇÃO (PONTO DE OPERAÇÃO) ---
     
     op_Q, op_H = None, None
@@ -260,11 +343,11 @@ with col_plot:
                 H_system = static_head + calculate_head_loss(Q, st.session_state.system_segments, kinematic_viscosity)
                 return H_pump - H_system
 
-            from scipy.optimize import fsolve
             
             # Chute inicial para a vazão de operação
             Q_guess = max_flow / 2
             try:
+                # Usa fsolve para encontrar a raiz (interseção)
                 Q_operation = fsolve(difference_function, Q_guess)[0]
                 
                 # Garante que a solução está dentro do intervalo de vazão plotado
@@ -345,6 +428,24 @@ with col_plot:
     st.header("4. Exportação de Relatório e Dados")
     
     col_dl1, col_dl2, col_dl3, col_dl4 = st.columns(4)
+    
+    # Função para formatar os detalhes dos acessórios em texto
+    def format_accessories_for_report(segments):
+        text = ""
+        for seg in segments:
+            text += f"\n--- Segmento {seg['id']} ---\n"
+            text += f"Comprimento (L): {seg['L']} m\n"
+            text += f"Diâmetro (D): {seg['D']} m\n"
+            text += f"Rugosidade (ε): {seg['e']:.2e} m\n"
+            text += f"K minor Final: {seg['K_minor']:.2f}\n"
+            
+            if seg.get('Acessórios'):
+                text += "Acessórios Detalhados:\n"
+                for acc, qty in seg['Acessórios'].items():
+                    text += f"  - {acc}: {qty} unidades (K={FITTING_K_FACTORS.get(acc, 'N/A')})\n"
+            else:
+                text += "Acessórios Detalhados: (Valor K Manual)\n"
+        return text
 
     # 1. Gerar Resumo Textual
     report_text = f"""
@@ -369,12 +470,8 @@ with col_plot:
 ## 3. Curva da Bomba (Ajuste Polinomial de 2º Grau)
 - Equação: {pump_eq_str}
 
-## 4. Curva do Sistema (Perdas de Carga)
-- Perda de Carga Total (@ {max_flow:.0f} m³/h): {h_loss_max:.2f} m
-- Detalhes dos Segmentos de Tubulação (CSV Anexado - Segments.csv)
-- Detalhes dos Pontos da Bomba (CSV Anexado - PumpPoints.csv)
-- Dados Completos das Curvas (CSV Anexado - PlotData.csv)
-
+## 4. Detalhes da Tubulação e Perdas Menores
+{format_accessories_for_report(st.session_state.system_segments)}
 """
     
     # Botão de Download do Resumo
@@ -384,7 +481,7 @@ with col_plot:
             data=report_text,
             file_name="Relatorio_Bomba_Sistema.txt",
             mime="text/plain",
-            help="Baixa um resumo textual (Markdown/TXT) dos resultados principais."
+            help="Baixa um resumo textual (Markdown/TXT) dos resultados principais, incluindo os detalhes dos acessórios."
         )
 
     # 2. Download dos Pontos da Bomba
@@ -402,14 +499,17 @@ with col_plot:
     # 3. Download dos Segmentos do Sistema
     if st.session_state.system_segments:
         with col_dl3:
-            # Usar o df_segments_display para manter os nomes de colunas em Português
-            csv_segments = df_segments_display.to_csv(index=False).encode('utf-8')
+            # Prepara um DF para download, garantindo que a coluna 'Acessórios' seja serializável
+            df_export = df_segments_display.copy()
+            df_export['Detalhes K'] = df_export['Detalhes K'].apply(lambda x: str(x))
+            csv_segments = df_export.to_csv(index=False).encode('utf-8')
+            
             st.download_button(
                 label="⬇️ Dados Sistema (CSV)",
                 data=csv_segments,
                 file_name='SystemSegments.csv',
                 mime='text/csv',
-                help="Baixa os dados de comprimento, diâmetro, rugosidade e K menor."
+                help="Baixa os dados detalhados, incluindo o K minor calculado e os acessórios."
             )
 
     # 4. Download dos Dados da Curva para Plotagem
